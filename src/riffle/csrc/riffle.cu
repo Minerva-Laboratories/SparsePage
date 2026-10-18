@@ -293,7 +293,7 @@ void score(torch::Tensor qs, torch::Tensor qb, torch::Tensor mu, torch::Tensor U
       (float)sig, scores.data_ptr<float>());
 }
 
-void select(torch::Tensor scores, int64_t npg, int64_t m, torch::Tensor sel) {
+void select_pages(torch::Tensor scores, int64_t npg, int64_t m, torch::Tensor sel) {
   const int Hkv = scores.size(0), npg_cap = scores.size(1);
   const size_t smem = (size_t)npg * sizeof(unsigned);
   if (npg == 0 || m == 0) return;
@@ -324,5 +324,5 @@ void combine(torch::Tensor pm1, torch::Tensor pl1, torch::Tensor pa1, int64_t nb
 }
 
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
-  m.def("score", &score); m.def("select", &select); m.def("pass_", &pass); m.def("combine", &combine);
+  m.def("score", &score); m.def("select", &select_pages); m.def("pass_", &pass); m.def("combine", &combine);
 }
