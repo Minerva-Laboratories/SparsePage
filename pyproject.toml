@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "riffle"
+version = "0.1.0"
+description = "Summary-scored page selection for long-context decode attention: read the top pages, drop the rest (CUDA, graph-capturable)."
+requires-python = ">=3.10"
+license = "Apache-2.0"
+license-files = ["LICENSE", "NOTICE"]
+dependencies = ["torch>=2.4", "numpy"]
+
+[project.optional-dependencies]
+eval = ["transformers>=5.2"]                     # end-to-end perplexity on Qwen3.5 (experiments/)
+test = ["pytest"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+riffle = ["csrc/*.cu"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = ["gpu: needs CUDA (builds the kernels)"]
