@@ -104,8 +104,8 @@ class RiffleCache:
         m = self.n_open()
         if m:
             e.score(qs, qs, self.mu, self.U, self.lamres, self.mx, self.mn, self.npg, int(self.cov), int(self.bound),
-                    self.sig, self.scores)
-            e.select(self.scores, self.npg, m, self.sel)
+                    self.sig, self.scores, None)
+            e.select(self.scores, self.npg, m, self.sel, None, 0.0, None)
         n1 = m * PAGE
         tpb1 = tokens_per_block(max(n1, 1), self.Hkv)
         nb1 = -(-n1 // tpb1)

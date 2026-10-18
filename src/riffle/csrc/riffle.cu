@@ -41,9 +41,10 @@ __device__ __forceinline__ float warp_sum(float x) {
 // ------------------------------------------------------------------------------------------- page scores
 __global__ void score_k(const float* qs, const float* qb, const __half* mu, const __half* U, const float* lamres,
                         const __half* kmx, const __half* kmn, int npg, int npg_cap, int cov, int bound, float sig,
-                        float* scores) {
+                        float* scores, const int* npg_dev) {
   const int h = blockIdx.y, lane = threadIdx.x & 31, w = threadIdx.x >> 5;
   const int pg = blockIdx.x * WARPS + w;
+  if (npg_dev) npg = *npg_dev;
   if (pg >= npg) return;
   const size_t prow = (size_t)h * npg_cap + pg;
   float ql[G][LD];
@@ -104,11 +105,17 @@ __device__ __forceinline__ unsigned fkey(float f) {
   return (u & 0x80000000u) ? ~u : (u | 0x80000000u);
 }
 
-__global__ void select_k(const float* scores, int npg, int npg_cap, int m, int* sel, int sel_stride) {
+__global__ void select_k(const float* scores, int npg, int npg_cap, int m, int* sel, int sel_stride,
+                         const int* npg_dev, double rho, int* ntok_dev) {
   extern __shared__ unsigned keys[];
   __shared__ unsigned hist[256];
   __shared__ unsigned s_prefix, s_mask, s_rem, s_cnt, s_eq;
   const int h = blockIdx.x;
+  if (npg_dev) {                         // counts on the GPU: m = clamp(ceil(rho npg), 1, npg); publish m * PAGE tokens
+    npg = *npg_dev;
+    m = min(npg, max(1, (int)ceil(rho * (double)npg)));   // same as Python ceil(rho * npg)
+    if (h == 0 && threadIdx.x == 0 && ntok_dev) *ntok_dev = m * PAGE;
+  }
   for (int i = threadIdx.x; i < npg; i += blockDim.x) keys[i] = fkey(scores[(size_t)h * npg_cap + i]);
   if (threadIdx.x == 0) { s_prefix = 0u; s_mask = 0u; s_rem = (unsigned)m; s_cnt = 0u; s_eq = 0u; }
   __syncthreads();
@@ -284,22 +291,25 @@ __global__ void combine_k(const float* pm1, const float* pl1, const float* pa1, 
 static const void* ptr(const c10::optional<torch::Tensor>& t) { return (t.has_value() && t->defined()) ? t->data_ptr() : nullptr; }
 
 void score(torch::Tensor qs, torch::Tensor qb, torch::Tensor mu, torch::Tensor U, torch::Tensor lamres,
-           torch::Tensor kmx, torch::Tensor kmn, int64_t npg, int64_t cov, int64_t bound, double sig, torch::Tensor scores) {
+           torch::Tensor kmx, torch::Tensor kmn, int64_t npg, int64_t cov, int64_t bound, double sig, torch::Tensor scores,
+           c10::optional<torch::Tensor> npg_dev) {
   const int Hkv = mu.size(0), npg_cap = mu.size(1);
-  if (npg == 0) return;
+  if (npg == 0) return;                  // with npg_dev, npg is the upper bound that sizes the grid
   score_k<<<dim3((npg + WARPS - 1) / WARPS, Hkv), 32 * WARPS, 0, c10::cuda::getCurrentCUDAStream()>>>(
       qs.data_ptr<float>(), qb.data_ptr<float>(), (const __half*)mu.data_ptr(), (const __half*)U.data_ptr(),
       lamres.data_ptr<float>(), (const __half*)kmx.data_ptr(), (const __half*)kmn.data_ptr(), npg, npg_cap, cov, bound,
-      (float)sig, scores.data_ptr<float>());
+      (float)sig, scores.data_ptr<float>(), (const int*)ptr(npg_dev));
 }
 
-void select_pages(torch::Tensor scores, int64_t npg, int64_t m, torch::Tensor sel) {
+void select_pages(torch::Tensor scores, int64_t npg, int64_t m, torch::Tensor sel, c10::optional<torch::Tensor> npg_dev,
+                  double rho, c10::optional<torch::Tensor> ntok_dev) {
   const int Hkv = scores.size(0), npg_cap = scores.size(1);
   const size_t smem = (size_t)npg * sizeof(unsigned);
   if (npg == 0 || m == 0) return;
   if (smem > 48 * 1024) cudaFuncSetAttribute(select_k, cudaFuncAttributeMaxDynamicSharedMemorySize, (int)smem);
   select_k<<<Hkv, 1024, smem, c10::cuda::getCurrentCUDAStream()>>>(scores.data_ptr<float>(), npg, npg_cap, m,
-                                                                   sel.data_ptr<int>(), sel.size(1));
+                                                                   sel.data_ptr<int>(), sel.size(1), (const int*)ptr(npg_dev),
+                                                                   rho, (int*)ptr(ntok_dev));
 }
 
 void pass(torch::Tensor q, torch::Tensor kb, torch::Tensor vb, int64_t t0, int64_t n, c10::optional<torch::Tensor> pages,
