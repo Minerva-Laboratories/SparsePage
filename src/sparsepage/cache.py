@@ -4,7 +4,9 @@ Layout per attention layer: bf16 K/V (Hkv, Tcap, D); pages of 128 tokens. Every 
 gets summaries (summaries.py) when it is written. Per decode step and KV head: score all summarized pages, open the top
 ceil(rho * pages) (page 0 always), read them exactly, drop the rest (their mass is neither read nor estimated), add the
 exact recent window (the last `window`..`window + 127` tokens), merge. The kernel path (attend_kernel) runs without host
-synchronization, so a decode step can be captured in a CUDA graph; attend_ref is the PyTorch reference.
+synchronization, so it can be captured in a CUDA graph; it passes the page and token counts from the host, so a graph
+captured here is valid for the cache length at capture (the kernels' device-side counts, used by HgRT, lift that).
+attend_ref is the PyTorch reference.
 
 Shapes: keys / values (T, Hkv, D) for prefill and (1, Hkv, D) for append; queries (Hkv * G, D) post-RoPE, unscaled."""
 import math

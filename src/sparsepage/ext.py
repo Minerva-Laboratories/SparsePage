@@ -17,5 +17,5 @@ def ext(head_dim: int = 256):
         os.makedirs(bd, exist_ok=True)
         src = os.path.join(os.path.dirname(os.path.abspath(__file__)), "csrc", "sparsepage.cu")
         _EXT[head_dim] = load(name, [src], build_directory=bd, verbose=False,
-                              extra_cuda_cflags=["-O3", "--use_fast_math", "-allow-unsupported-compiler", f"-DRF_D={head_dim}"])
+                              extra_cuda_cflags=["-O3", "--use_fast_math", "-allow-unsupported-compiler", f"-DSP_HEAD_DIM={head_dim}"])
     return _EXT[head_dim]

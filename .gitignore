@@ -1,5 +1,28 @@
+# Python
 __pycache__/
-*.pyc
-.pytest_cache/
-build/
+*.py[cod]
 *.egg-info/
+build/
+dist/
+.venv/
+venv/
+
+# tools
+.pytest_cache/
+.ipynb_checkpoints/
+.mypy_cache/
+.ruff_cache/
+
+# compiled kernels (the JIT build goes to ~/.cache/sparsepage, see SPARSEPAGE_BUILD_DIR)
+*.so
+*.o
+*.ninja*
+
+# editors / OS
+.vscode/
+.idea/
+.DS_Store
+
+# local run logs
+*.log
+nohup.out

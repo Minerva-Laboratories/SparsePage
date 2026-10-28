@@ -1,11 +1,15 @@
-// SparsePage decode kernels (batch 1, GQA group G = 4, head_dim D = RF_D in {128, 256}).
+// SparsePage decode kernels (batch 1, GQA group G = 4, head_dim D = SP_HEAD_DIM in {128, 256}).
 //
-//   score   : one warp per page; score of a page for a KV head = max over its G query heads of
+//   score   : warps grid-stride over pages, each keeping its head's queries in registers; score of a page for a KV head
+//             = max over its G query heads of
 //             min(q_s . mu + sig/2 (sum_r lam_r (q_s . U_r)^2 + res (|q_s|^2 - sum_r (q_s . U_r)^2)),   [cov]
 //                 sum_d max(q_b,d mx_d, q_b,d mn_d))                                                  [bound]
 //             q_s lives in the summaries' domain (mu, U), q_b in the bound's domain (mx, mn); they are the same tensor
 //             unless the pages are stored in a transformed (e.g. rotated) domain. Page 0 (attention sinks) = +inf.
 //   select  : top-m pages per KV head, radix select (4 x 8-bit digits) in shared memory + compaction; no host sync.
+//             With npg_dev the page count is read on the GPU, m = clamp(ceil(rho npg), 1, npg) is derived there and
+//             m * PAGE is published to ntok_dev, so score + select can be captured once and replayed as the page count grows
+//             (npg passed from the host is then the capacity that sizes the grid and shared memory).
 //   pass    : split-K flash-decoding over bf16 K/V (Hkv, Tcap, D): token range [t0, t0+n) or a page list
 //             pages[h][i] (n = 128 m). Lane-per-token logits over 32-token tiles, dims-parallel values.
 //             Writes partials (m, l, acc) per (block, h, g).
@@ -15,10 +19,10 @@
 #include <cuda_fp16.h>
 #include <c10/cuda/CUDAStream.h>
 
-#ifndef RF_D
-#define RF_D 256
+#ifndef SP_HEAD_DIM
+#define SP_HEAD_DIM 256
 #endif
-constexpr int D = RF_D;
+constexpr int D = SP_HEAD_DIM;
 static_assert(D == 128 || D == 256, "head_dim must be 128 or 256");
 constexpr int G = 4;
 constexpr int LD = D / 32;
