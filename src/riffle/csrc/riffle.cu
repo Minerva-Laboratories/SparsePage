@@ -42,61 +42,66 @@ __device__ __forceinline__ float warp_sum(float x) {
 __global__ void score_k(const float* qs, const float* qb, const __half* mu, const __half* U, const float* lamres,
                         const __half* kmx, const __half* kmn, int npg, int npg_cap, int cov, int bound, float sig,
                         float* scores, const int* npg_dev) {
+  // grid-stride over pages: each warp keeps its head's queries (and their norms) in registers and scores many
+  // pages, so the per-page work is the five 16-byte loads and the reductions, not reloading q
   const int h = blockIdx.y, lane = threadIdx.x & 31, w = threadIdx.x >> 5;
-  const int pg = blockIdx.x * WARPS + w;
   if (npg_dev) npg = *npg_dev;
-  if (pg >= npg) return;
-  const size_t prow = (size_t)h * npg_cap + pg;
-  float ql[G][LD];
-#pragma unroll
-  for (int g = 0; g < G; g++)
-#pragma unroll
-    for (int i = 0; i < LD; i++) ql[g][i] = qs[(h * G + g) * D + lane * LD + i];
-  float a[G], z0[G], z1[G], qn[G], ub[G];
-  __half m[LD];
-  load_lane16(mu + prow * D + lane * LD, m);
+  float ql[G][LD], qbl[G][LD], qn[G];
 #pragma unroll
   for (int g = 0; g < G; g++) {
-    a[g] = 0.f; z0[g] = 0.f; z1[g] = 0.f; qn[g] = 0.f; ub[g] = 0.f;
+    float n = 0.f;
 #pragma unroll
-    for (int i = 0; i < LD; i++) a[g] += ql[g][i] * __half2float(m[i]);
-  }
-  if (cov) {
-    __half u0[LD], u1[LD];
-    load_lane16(U + (prow * RK + 0) * D + lane * LD, u0);
-    load_lane16(U + (prow * RK + 1) * D + lane * LD, u1);
-#pragma unroll
-    for (int g = 0; g < G; g++)
-#pragma unroll
-      for (int i = 0; i < LD; i++) {
-        z0[g] += ql[g][i] * __half2float(u0[i]); z1[g] += ql[g][i] * __half2float(u1[i]); qn[g] += ql[g][i] * ql[g][i];
-      }
-  }
-  if (bound) {
-    __half mx[LD], mn[LD];
-    load_lane16(kmx + prow * D + lane * LD, mx);
-    load_lane16(kmn + prow * D + lane * LD, mn);
-#pragma unroll
-    for (int g = 0; g < G; g++)
-#pragma unroll
-      for (int i = 0; i < LD; i++) {
-        const float qv = qb[(h * G + g) * D + lane * LD + i];
-        ub[g] += fmaxf(qv * __half2float(mx[i]), qv * __half2float(mn[i]));
-      }
-  }
-  float best = -INFINITY;
-#pragma unroll
-  for (int g = 0; g < G; g++) {
-    float est = warp_sum(a[g]);
-    if (cov) {
-      const float y0 = warp_sum(z0[g]), y1 = warp_sum(z1[g]), nn = warp_sum(qn[g]);
-      const float* lr = lamres + prow * (RK + 1);
-      est += 0.5f * sig * (lr[0] * y0 * y0 + lr[1] * y1 * y1 + lr[2] * (nn - y0 * y0 - y1 * y1));
+    for (int i = 0; i < LD; i++) {
+      ql[g][i] = qs[(h * G + g) * D + lane * LD + i];
+      qbl[g][i] = qb[(h * G + g) * D + lane * LD + i];
+      n += ql[g][i] * ql[g][i];
     }
-    if (bound) est = fminf(est, warp_sum(ub[g]));
-    best = fmaxf(best, est);
+    qn[g] = cov ? warp_sum(n) : 0.f;
   }
-  if (lane == 0) scores[prow] = (pg == 0) ? INFINITY : best;
+  for (int pg = blockIdx.x * WARPS + w; pg < npg; pg += gridDim.x * WARPS) {
+    const size_t prow = (size_t)h * npg_cap + pg;
+    float a[G], z0[G], z1[G], ub[G];
+    __half m[LD];
+    load_lane16(mu + prow * D + lane * LD, m);
+#pragma unroll
+    for (int g = 0; g < G; g++) {
+      a[g] = 0.f; z0[g] = 0.f; z1[g] = 0.f; ub[g] = 0.f;
+#pragma unroll
+      for (int i = 0; i < LD; i++) a[g] += ql[g][i] * __half2float(m[i]);
+    }
+    if (cov) {
+      __half u0[LD], u1[LD];
+      load_lane16(U + (prow * RK + 0) * D + lane * LD, u0);
+      load_lane16(U + (prow * RK + 1) * D + lane * LD, u1);
+#pragma unroll
+      for (int g = 0; g < G; g++)
+#pragma unroll
+        for (int i = 0; i < LD; i++) { z0[g] += ql[g][i] * __half2float(u0[i]); z1[g] += ql[g][i] * __half2float(u1[i]); }
+    }
+    if (bound) {
+      __half mx[LD], mn[LD];
+      load_lane16(kmx + prow * D + lane * LD, mx);
+      load_lane16(kmn + prow * D + lane * LD, mn);
+#pragma unroll
+      for (int g = 0; g < G; g++)
+#pragma unroll
+        for (int i = 0; i < LD; i++)
+          ub[g] += fmaxf(qbl[g][i] * __half2float(mx[i]), qbl[g][i] * __half2float(mn[i]));
+    }
+    float best = -INFINITY;
+    const float* lr = lamres + prow * (RK + 1);
+#pragma unroll
+    for (int g = 0; g < G; g++) {
+      float est = warp_sum(a[g]);
+      if (cov) {
+        const float y0 = warp_sum(z0[g]), y1 = warp_sum(z1[g]);
+        est += 0.5f * sig * (lr[0] * y0 * y0 + lr[1] * y1 * y1 + lr[2] * (qn[g] - y0 * y0 - y1 * y1));
+      }
+      if (bound) est = fminf(est, warp_sum(ub[g]));
+      best = fmaxf(best, est);
+    }
+    if (lane == 0) scores[prow] = (pg == 0) ? INFINITY : best;
+  }
 }
 
 // ------------------------------------------------------------------------------------------- top-m select
@@ -295,7 +300,8 @@ void score(torch::Tensor qs, torch::Tensor qb, torch::Tensor mu, torch::Tensor U
            c10::optional<torch::Tensor> npg_dev) {
   const int Hkv = mu.size(0), npg_cap = mu.size(1);
   if (npg == 0) return;                  // with npg_dev, npg is the upper bound that sizes the grid
-  score_k<<<dim3((npg + WARPS - 1) / WARPS, Hkv), 32 * WARPS, 0, c10::cuda::getCurrentCUDAStream()>>>(
+  const int nbx = std::min((int)((npg + WARPS - 1) / WARPS), 48);      // grid-stride: ~3 blocks per SM per head
+  score_k<<<dim3(nbx, Hkv), 32 * WARPS, 0, c10::cuda::getCurrentCUDAStream()>>>(
       qs.data_ptr<float>(), qb.data_ptr<float>(), (const __half*)mu.data_ptr(), (const __half*)U.data_ptr(),
       lamres.data_ptr<float>(), (const __half*)kmx.data_ptr(), (const __half*)kmn.data_ptr(), npg, npg_cap, cov, bound,
       (float)sig, scores.data_ptr<float>(), (const int*)ptr(npg_dev));
