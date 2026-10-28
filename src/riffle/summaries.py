@@ -14,13 +14,32 @@ import torch
 PAGE, RK, SIG = 128, 2, 0.5
 
 
+_INIT = {}
+
+
+def _orth(A):
+    """(B, D, rk) -> orthonormal columns spanning the same subspace. rk = 2: Gram-Schmidt in plain tensor ops (no
+    cuSOLVER call, so it is CUDA-graph capturable and cheap for tiny batches); equal to torch.linalg.qr's Q up to
+    column signs and rounding. Summaries only enter scores through (q . U_r)^2, so signs do not matter."""
+    if A.shape[-1] != 2:
+        return torch.linalg.qr(A)[0]
+    a, b = A[..., 0], A[..., 1]
+    u1 = a / a.norm(dim=-1, keepdim=True).clamp_min(1e-30)
+    b = b - (u1 * b).sum(-1, keepdim=True) * u1
+    return torch.stack([u1, b / b.norm(dim=-1, keepdim=True).clamp_min(1e-30)], -1)
+
+
 def top_dirs(X, rk=RK, iters=6):
-    """X (B, n, D) centered rows -> U (B, D, rk) top covariance directions, lam (B, rk), total variance (B,)."""
+    """X (B, n, D) centered rows -> U (B, D, rk) top covariance directions, lam (B, rk), total variance (B,).
+    Subspace iteration from a fixed random start (seed 0, cached per shape so no generator is created per call)."""
     B, n, D = X.shape
-    g = torch.Generator(device=X.device).manual_seed(0)
-    U = torch.linalg.qr(torch.randn(B, D, rk, device=X.device, generator=g))[0]
+    key = (B, D, rk, str(X.device))
+    if key not in _INIT:
+        g = torch.Generator(device=X.device).manual_seed(0)
+        _INIT[key] = _orth(torch.randn(B, D, rk, device=X.device, generator=g))
+    U = _INIT[key]
     for _ in range(iters):
-        U = torch.linalg.qr(X.transpose(1, 2) @ (X @ U) / n)[0]
+        U = _orth(X.transpose(1, 2) @ (X @ U) / n)
     XU = X @ U
     return U, (XU * XU).sum(1) / n, (X * X).sum((1, 2)) / n
 
