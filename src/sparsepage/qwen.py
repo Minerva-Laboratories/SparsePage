@@ -185,7 +185,7 @@ class Runner:
 # ------------------------------------------------------------------------------------------------- texts
 def prose_text():
     """WikiText-2 train (raw) from the local Hugging Face datasets cache."""
-    out = os.path.join(os.path.expanduser("~/.cache/riffle"), "wikitext2_train.txt")
+    out = os.path.join(os.path.expanduser("~/.cache/sparsepage"), "wikitext2_train.txt")
     if not os.path.exists(out):
         import pyarrow.parquet as pq
         hub = os.environ.get("HF_HUB_CACHE", os.path.expanduser("~/.cache/huggingface/hub"))

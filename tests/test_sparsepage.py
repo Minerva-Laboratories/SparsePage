@@ -1,10 +1,10 @@
-"""Riffle: summaries, scores and the reference path on CPU; the CUDA kernels against the reference (marked gpu)."""
+"""SparsePage: summaries, scores and the reference path on CPU; the CUDA kernels against the reference (marked gpu)."""
 import math
 
 import pytest
 import torch
 
-from riffle import PAGE, RK, RiffleCache, page_scores, summarize, top_dirs
+from sparsepage import PAGE, RK, SparsePageCache, page_scores, summarize, top_dirs
 
 H, D = 2, 128
 
@@ -48,7 +48,7 @@ def test_mean_score_and_bound():
 @pytest.mark.parametrize("T", [5, 300, 9 * PAGE + 17])
 def test_reference_with_all_pages_is_dense_attention(T):
     K, V, q = _kv(T)
-    c = RiffleCache(H, T + 64, head_dim=D, rho=1.0, device="cpu")
+    c = SparsePageCache(H, T + 64, head_dim=D, rho=1.0, device="cpu")
     c.prefill(K, V)
     qs = (q * D ** -0.5).view(H, 4, D)
     Kb, Vb = K.to(torch.bfloat16).float(), V.to(torch.bfloat16).float()
@@ -58,9 +58,9 @@ def test_reference_with_all_pages_is_dense_attention(T):
 
 def test_append_matches_prefill():
     K, V, q = _kv(6 * PAGE + 40)
-    a = RiffleCache(H, 2048, head_dim=D, rho=0.3, device="cpu")
+    a = SparsePageCache(H, 2048, head_dim=D, rho=0.3, device="cpu")
     a.prefill(K, V)
-    b = RiffleCache(H, 2048, head_dim=D, rho=0.3, device="cpu")
+    b = SparsePageCache(H, 2048, head_dim=D, rho=0.3, device="cpu")
     b.prefill(K[:200], V[:200])
     for t in range(200, len(K)):
         b.append(K[t:t + 1], V[t:t + 1])
@@ -70,7 +70,7 @@ def test_append_matches_prefill():
 
 def test_window_and_open_count():
     K, V, q = _kv(10 * PAGE + 5)
-    c = RiffleCache(H, 4096, head_dim=D, rho=0.1, device="cpu")
+    c = SparsePageCache(H, 4096, head_dim=D, rho=0.1, device="cpu")
     c.prefill(K, V)
     assert c.npg == 9 and c.n_open() == 1                    # window = last 133 tokens; ceil(0.1 * 9) = 1 page (the sink)
     c.attend(q)
@@ -87,7 +87,7 @@ def test_kernels_match_reference(head_dim, T, rho):
     D0, D = D, head_dim
     try:
         K, V, q = _kv(T, dev="cuda")
-        c = RiffleCache(H, T + 256, head_dim=head_dim, rho=rho, device="cuda")
+        c = SparsePageCache(H, T + 256, head_dim=head_dim, rho=rho, device="cuda")
         c.prefill(K, V)
         ref = c.attend_ref(q)
         sel_ref = c.last_sel
@@ -108,7 +108,7 @@ def test_kernels_match_reference(head_dim, T, rho):
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA")
 def test_kernel_path_is_graph_capturable():
     K, V, q = _kv(40 * PAGE, dev="cuda")
-    c = RiffleCache(H, 48 * PAGE, head_dim=D, rho=0.2, device="cuda")
+    c = SparsePageCache(H, 48 * PAGE, head_dim=D, rho=0.2, device="cuda")
     c.prefill(K, V)
     eager = c.attend_kernel(q).clone()
     s = torch.cuda.Stream()
@@ -125,7 +125,7 @@ def test_kernel_path_is_graph_capturable():
 
 
 def test_research_tree_opening_everything_is_exact():
-    from riffle.research.tree import Tree
+    from sparsepage.research.tree import Tree
     K, V, q = _kv(64 + 128 + 8 * 64 + 20, seed=3)
     t = Tree(H, len(K) + 8, device="cpu", rho=1.0, head_dim=D)
     t.prefill(K, V)

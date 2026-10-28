@@ -1,4 +1,4 @@
-"""Latency per attention call of Riffle against exact attention (same kernel, all pages), eager and inside a CUDA graph
+"""Latency per attention call of SparsePage against exact attention (same kernel, all pages), eager and inside a CUDA graph
 of 8 calls (the 9B's attention layers). Synthetic caches with drifting topic means (batch 1, G = 4).
 Env: BENCH_HKV (4 = Qwen3.5-9B), BENCH_D (256), BENCH_CTX (32768,131072,262144), BENCH_RHO (0.1,0.2), BENCH_OUT."""
 import json, os
@@ -6,7 +6,7 @@ import json, os
 import numpy as np
 import torch
 
-from riffle import RiffleCache
+from sparsepage import SparsePageCache
 
 torch.manual_seed(0)
 HKV, D = int(os.environ.get("BENCH_HKV", 4)), int(os.environ.get("BENCH_D", 256))
@@ -57,7 +57,7 @@ rows = []
 for T in CTX:
     K, V, q = synth(T)
     for rho in [1.0] + RHOS:
-        c = RiffleCache(HKV, T + 256, head_dim=D, rho=rho)
+        c = SparsePageCache(HKV, T + 256, head_dim=D, rho=rho)
         c.prefill(K, V)
         row = dict(T=T, Hkv=HKV, D=D, rho=rho, read_bits=c.read_bits())
         if rho < 1:
@@ -75,4 +75,4 @@ for T in CTX:
     torch.cuda.empty_cache()
 out = os.environ.get("BENCH_OUT", os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "results", f"bench_h{HKV}_d{D}.json"))
 json.dump(rows, open(out, "w"), indent=1)
-print("RIFFLE_BENCH_DONE")
+print("SPARSEPAGE_BENCH_DONE")

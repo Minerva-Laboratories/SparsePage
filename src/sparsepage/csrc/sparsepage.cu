@@ -1,4 +1,4 @@
-// Riffle decode kernels (batch 1, GQA group G = 4, head_dim D = RF_D in {128, 256}).
+// SparsePage decode kernels (batch 1, GQA group G = 4, head_dim D = RF_D in {128, 256}).
 //
 //   score   : one warp per page; score of a page for a KV head = max over its G query heads of
 //             min(q_s . mu + sig/2 (sum_r lam_r (q_s . U_r)^2 + res (|q_s|^2 - sum_r (q_s . U_r)^2)),   [cov]

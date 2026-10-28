@@ -1,19 +1,19 @@
-# Riffle
+# SparsePage
 
 Decode attention for long contexts that reads only the pages a query needs. Every 128-token page of the KV cache
-gets a small key summary when it is written; at each decode step Riffle scores all summaries, reads the top
+gets a small key summary when it is written; at each decode step SparsePage scores all summaries, reads the top
 `rho` of the pages exactly (page 0, the attention sinks, always), **drops the rest** (their mass is neither read nor
 estimated) and adds the exact recent window. Scoring, top-m selection, the paged attention pass and the merge are CUDA
 kernels with no host synchronization, so a whole decode step can be captured in a CUDA graph.
 
-Riffle is a method repository: bf16 pages, a PyTorch reference for every kernel, an end-to-end harness for Qwen3.5.
+SparsePage is a method repository: bf16 pages, a PyTorch reference for every kernel, an end-to-end harness for Qwen3.5.
 It composes with quantized pages (the scoring and selection kernels take the query in the summaries' domain and in the
 bound's domain separately, and the merge takes an optional unrotation): the combined stack with FoveaKV 2+2-bit pages
-and Terrace prefill lives in [Cairn](https://github.com/Minerva-Laboratories/cairn).
+and DepthSkip prefill lives in [HgRT](https://github.com/Minerva-Laboratories/hgrt).
 
 ## How a page is scored
 
-Summaries per page and KV head (`src/riffle/summaries.py`): mean key `mu`, top-2 covariance directions `U` with
+Summaries per page and KV head (`src/sparsepage/summaries.py`): mean key `mu`, top-2 covariance directions `U` with
 variances `lam` and the isotropic rest `res`, per-channel `max`/`min`. For a query `q` (scaled by 1/sqrt(d)):
 
     est   = q.mu + sigma/2 * (sum_r lam_r (q.U_r)^2 + res (|q|^2 - sum_r (q.U_r)^2))   # log-mass of a Gaussian page
@@ -26,8 +26,8 @@ top `ceil(rho * pages)` pages per KV head are found by a 4-round radix select in
 ## Usage
 
 ```python
-from riffle import RiffleCache
-c = RiffleCache(Hkv=4, Tmax=262144, head_dim=256, rho=0.1)       # one per full-attention layer
+from sparsepage import SparsePageCache
+c = SparsePageCache(Hkv=4, Tmax=262144, head_dim=256, rho=0.1)       # one per full-attention layer
 c.prefill(k, v)            # (T, Hkv, D) post-RoPE keys, values
 c.append(k1, v1)           # (1, Hkv, D) per decoded token
 out = c.attend(q)          # (Hkv * 4, D) post-RoPE query -> (Hkv * 4, D); CUDA kernels, attend_ref = PyTorch
@@ -37,7 +37,7 @@ Limits today: batch 1, GQA group 4 (the Qwen3.5 family), head_dim 128 or 256.
 
 ## Results
 
-Qwen3.5-9B on the Jetson AGX Orin (MODE_50W). **Riffle on bf16 pages: running** (`experiments/eval_ppl.py`,
+Qwen3.5-9B on the Jetson AGX Orin (MODE_50W). **SparsePage on bf16 pages: running** (`experiments/eval_ppl.py`,
 `experiments/bench.py`; tables will be filled from `results/`).
 
 Measured during development, in FoveaKV's harness (`results/research/`), on Qwen3.5-9B, protocol: exact prefill, 256
@@ -52,8 +52,8 @@ tokens teacher-forced through the cache, prose (WikiText-2) and code (transforme
 | Quest 5% pages (min/max bound only) | 0.18 | +1.15% | +0.60% | +0.32% |
 | Quest 15% pages | 0.28 | +0.39% | -0.34% | -0.05% |
 
-Estimating the unopened mass (Barnes-Hut style) buys nothing over dropping it, which is why Riffle drops. With the
-same scoring on contiguous FoveaKV 4-bit pages (Cairn's stack), the kernels give 0.36 / 0.79 / 1.45 ms per attention
+Estimating the unopened mass (Barnes-Hut style) buys nothing over dropping it, which is why SparsePage drops. With the
+same scoring on contiguous FoveaKV 4-bit pages (HgRT's stack), the kernels give 0.36 / 0.79 / 1.45 ms per attention
 call at 32K / 128K / 256K with 4 KV heads (exact bf16 kernel: 5.5 / 21.5 / 42.3 ms) and ΔPPL +0.21% at 20% /
 +0.63% at 10% on the same protocol.
 
@@ -62,7 +62,7 @@ call at 32K / 128K / 256K with 4 KV heads (exact bf16 kernel: 5.5 / 21.5 / 42.3 
 Page selection by summaries is established: Quest (arXiv:2406.10774; min/max bound, top pages), ArkVale (page digests,
 NeurIPS 2024), InfLLM, LServe (arXiv:2502.14866; hierarchical query-centric page selection with fused kernels), and
 cluster-based variants that also approximate the unselected keys: Multipole Attention (arXiv:2506.13059), RetroInfer
-(arXiv:2505.02922), ClusterKV, MagicPIG. Riffle's differences: the score combines a second-cumulant (covariance)
+(arXiv:2505.02922), ClusterKV, MagicPIG. SparsePage's differences: the score combines a second-cumulant (covariance)
 estimate of each page's log-mass with Quest's bound; the unselected pages are dropped (measured above to lose nothing
 against estimating them); the whole step is graph-capturable with on-GPU selection; and the kernels compose with
 quantized (rotated) pages. At 10% the covariance + bound score is slightly better than the bound or the mean alone,
@@ -71,11 +71,11 @@ but the confidence intervals overlap.
 ## Layout
 
 ```
-src/riffle/csrc/riffle.cu   score, select, paged pass, combine
-src/riffle/summaries.py     page summaries and the reference score
-src/riffle/cache.py         RiffleCache (kernel path + PyTorch reference)
-src/riffle/qwen.py          Qwen3.5 decode harness (any cache in the loop)
-src/riffle/research/tree.py Barnes-Hut tree over keys (the design study; PyTorch)
+src/sparsepage/csrc/sparsepage.cu   score, select, paged pass, combine
+src/sparsepage/summaries.py     page summaries and the reference score
+src/sparsepage/cache.py         SparsePageCache (kernel path + PyTorch reference)
+src/sparsepage/qwen.py          Qwen3.5 decode harness (any cache in the loop)
+src/sparsepage/research/tree.py Barnes-Hut tree over keys (the design study; PyTorch)
 experiments/                bench.py (latency), eval_ppl.py (end-to-end perplexity)
 tests/                      CPU tests; -m gpu: kernels vs reference, graph capture
 ```

@@ -1,23 +1,23 @@
-"""End-to-end perplexity on Qwen3.5 with Riffle (and the research tree) in the decode loop, against exact attention.
-Protocol: exact prefill of L-N tokens, N tokens teacher-forced through the cache (src/riffle/qwen.py).
-Env: RIFFLE_MODEL (default Qwen/Qwen3.5-9B), RIFFLE_LENS (16384,32768), RIFFLE_NDOC (3), RIFFLE_N (256),
-RIFFLE_SCHEMES, RIFFLE_SRCS (prose,code), RIFFLE_OUT (results/<model>/ppl.jsonl, resumable)."""
+"""End-to-end perplexity on Qwen3.5 with SparsePage (and the research tree) in the decode loop, against exact attention.
+Protocol: exact prefill of L-N tokens, N tokens teacher-forced through the cache (src/sparsepage/qwen.py).
+Env: SPARSEPAGE_MODEL (default Qwen/Qwen3.5-9B), SPARSEPAGE_LENS (16384,32768), SPARSEPAGE_NDOC (3), SPARSEPAGE_N (256),
+SPARSEPAGE_SCHEMES, SPARSEPAGE_SRCS (prose,code), SPARSEPAGE_OUT (results/<model>/ppl.jsonl, resumable)."""
 import json, math, os, time
 
 import torch
 
-from riffle import RiffleCache
-from riffle.qwen import DEV, Runner, code_text, doc_windows, prose_text
-from riffle.research.tree import Tree
+from sparsepage import SparsePageCache
+from sparsepage.qwen import DEV, Runner, code_text, doc_windows, prose_text
+from sparsepage.research.tree import Tree
 
-MODEL = os.environ.get("RIFFLE_MODEL", "Qwen/Qwen3.5-9B")
-LENS = [int(x) for x in os.environ.get("RIFFLE_LENS", "16384,32768").split(",")]
-NDOC, N = int(os.environ.get("RIFFLE_NDOC", 3)), int(os.environ.get("RIFFLE_N", 256))
-SRCS = os.environ.get("RIFFLE_SRCS", "prose,code").split(",")
+MODEL = os.environ.get("SPARSEPAGE_MODEL", "Qwen/Qwen3.5-9B")
+LENS = [int(x) for x in os.environ.get("SPARSEPAGE_LENS", "16384,32768").split(",")]
+NDOC, N = int(os.environ.get("SPARSEPAGE_NDOC", 3)), int(os.environ.get("SPARSEPAGE_N", 256))
+SRCS = os.environ.get("SPARSEPAGE_SRCS", "prose,code").split(",")
 
 
-def riffle(rho, **kw):
-    return lambda Hkv, Tmax: RiffleCache(Hkv, Tmax, head_dim=R.hd, rho=rho, **kw)
+def sparsepage(rho, **kw):
+    return lambda Hkv, Tmax: SparsePageCache(Hkv, Tmax, head_dim=R.hd, rho=rho, **kw)
 
 
 def tree(**kw):
@@ -27,13 +27,13 @@ def tree(**kw):
     return lambda Hkv, Tmax: T(Hkv, Tmax, head_dim=R.hd, **kw)
 
 
-SCHEMES = {"exact": lambda: riffle(1.0), "riffle5": lambda: riffle(0.05), "riffle10": lambda: riffle(0.10),
-           "riffle20": lambda: riffle(0.20), "riffle10-bound": lambda: riffle(0.10, cov=False),
-           "riffle10-mean": lambda: riffle(0.10, cov=False, bound=False),
+SCHEMES = {"exact": lambda: sparsepage(1.0), "sparsepage5": lambda: sparsepage(0.05), "sparsepage10": lambda: sparsepage(0.10),
+           "sparsepage20": lambda: sparsepage(0.20), "sparsepage10-bound": lambda: sparsepage(0.10, cov=False),
+           "sparsepage10-mean": lambda: sparsepage(0.10, cov=False, bound=False),
            "tree-flat-r10": lambda: tree(rho=0.1), "tree-drop-r20": lambda: tree(rho=0.2, drop=True)}
-ORDER = os.environ.get("RIFFLE_SCHEMES", "exact,riffle5,riffle10,riffle20,riffle10-bound,riffle10-mean").split(",")
+ORDER = os.environ.get("SPARSEPAGE_SCHEMES", "exact,sparsepage5,sparsepage10,sparsepage20,sparsepage10-bound,sparsepage10-mean").split(",")
 tag = MODEL.rstrip("/").split("/")[-1].lower()
-out_p = os.environ.get("RIFFLE_OUT", os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "results", tag, "ppl.jsonl"))
+out_p = os.environ.get("SPARSEPAGE_OUT", os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "results", tag, "ppl.jsonl"))
 os.makedirs(os.path.dirname(out_p), exist_ok=True)
 done = {(r["src"], r["L"], r["doc"], r["scheme"]) for r in map(json.loads, open(out_p))} if os.path.exists(out_p) else set()
 
@@ -58,4 +58,4 @@ for src in SRCS:
                       f"({time.time() - ts:.0f}s)", flush=True)
             del snap
             torch.cuda.empty_cache()
-print("RIFFLE_PPL_DONE")
+print("SPARSEPAGE_PPL_DONE")

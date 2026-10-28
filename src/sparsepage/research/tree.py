@@ -1,4 +1,4 @@
-"""Barnes-Hut tree over the keys (research reference in PyTorch, not a kernel): the design study that led to Riffle.
+"""Barnes-Hut tree over the keys (research reference in PyTorch, not a kernel): the design study that led to SparsePage.
 
 Originally developed in the FoveaKV repository's compute track (E24-E26); moved here with the method.
 At prefill, per KV head, the region [64, T_prefill - 128) is clustered into nodes of ~64 keys by k-means in the query
@@ -10,7 +10,7 @@ max/min bound, value mean and the value-key cross covariance on the two directio
 Per decode step and KV head (shared by its GQA group, max of the query heads' estimates): estimate every node's log mass
 (flat) or the parents' first and only the children of the Pp heaviest parents (tree); open nodes by estimated mass until
 rho of the region's tokens; opened tokens are read exactly, unopened nodes contribute their summary, unopened parents
-their parent summary. 'drop' = the same opening, unopened nodes dropped (Riffle's choice, on contiguous pages).
+their parent summary. 'drop' = the same opening, unopened nodes dropped (SparsePage's choice, on contiguous pages).
 compute() = (exact tokens + node evaluations x (4 + 2r)/2 token-equivalents) / context, averaged over steps."""
 import math
 import torch

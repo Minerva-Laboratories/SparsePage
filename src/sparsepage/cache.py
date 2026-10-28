@@ -1,4 +1,4 @@
-"""RiffleCache: decode attention that reads only the pages a query needs.
+"""SparsePageCache: decode attention that reads only the pages a query needs.
 
 Layout per attention layer: bf16 K/V (Hkv, Tcap, D); pages of 128 tokens. Every page older than the recent window
 gets summaries (summaries.py) when it is written. Per decode step and KV head: score all summarized pages, open the top
@@ -22,7 +22,7 @@ def tokens_per_block(n, Hkv, target_blocks=160):
     return -(-t // PAGE) * PAGE
 
 
-class RiffleCache:
+class SparsePageCache:
     def __init__(self, Hkv, Tmax, head_dim=256, rho=0.1, cov=True, bound=True, sig=SIG, window=128, device="cuda",
                  use_kernel=None):
         assert window % PAGE == 0
