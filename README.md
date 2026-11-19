@@ -1,8 +1,8 @@
 <div align="center">
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/sparsepage-dark.png">
-  <img alt="SparsePage" src="docs/assets/sparsepage-light.png" width="520">
+  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/Minerva-Laboratories/SparsePage/main/docs/assets/sparsepage-dark.png">
+  <img alt="SparsePage" src="https://raw.githubusercontent.com/Minerva-Laboratories/SparsePage/main/docs/assets/sparsepage-light.png" width="520">
 </picture>
 
 ### Decode attention that reads only the pages a query needs
@@ -10,18 +10,18 @@
 Every 128-token page of the KV cache gets a small key summary. Each decode step scores all of them on the GPU,<br>
 reads the top 10-20% of pages exactly and drops the rest. No host synchronization, so the step fits in a CUDA graph.
 
-[![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-1d9bd1.svg)](LICENSE)
-[![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-1d9bd1.svg)](pyproject.toml)
-[![PyTorch 2.4+](https://img.shields.io/badge/pytorch-2.4%2B-1d9bd1.svg)](pyproject.toml)
-[![CUDA kernels](https://img.shields.io/badge/CUDA-score%20%C2%B7%20select%20%C2%B7%20pass%20%C2%B7%20combine-1d9bd1.svg)](src/sparsepage/csrc/sparsepage.cu)
-[![Tests: 8 CPU + 9 GPU](https://img.shields.io/badge/tests-8%20CPU%20%2B%209%20GPU-1baf7a.svg)](tests/test_sparsepage.py)
+[![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-1d9bd1.svg)](https://github.com/Minerva-Laboratories/SparsePage/blob/main/LICENSE)
+[![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-1d9bd1.svg)](https://github.com/Minerva-Laboratories/SparsePage/blob/main/pyproject.toml)
+[![PyTorch 2.4+](https://img.shields.io/badge/pytorch-2.4%2B-1d9bd1.svg)](https://github.com/Minerva-Laboratories/SparsePage/blob/main/pyproject.toml)
+[![CUDA kernels](https://img.shields.io/badge/CUDA-score%20%C2%B7%20select%20%C2%B7%20pass%20%C2%B7%20combine-1d9bd1.svg)](https://github.com/Minerva-Laboratories/SparsePage/blob/main/src/sparsepage/csrc/sparsepage.cu)
+[![Tests: 8 CPU + 9 GPU](https://img.shields.io/badge/tests-8%20CPU%20%2B%209%20GPU-1baf7a.svg)](https://github.com/Minerva-Laboratories/SparsePage/blob/main/tests/test_sparsepage.py)
 [![Part of: HgRT](https://img.shields.io/badge/part%20of-HgRT-2a78d6.svg)](https://github.com/Minerva-Laboratories/HgRT)
 
 [**How a page is scored**](#how-a-page-is-scored) ·
 [**Results**](#results) ·
 [**Quickstart**](#quickstart) ·
 [**Kernels**](#how-the-kernels-work) ·
-[**Raw results**](results/README.md) ·
+[**Raw results**](https://github.com/Minerva-Laboratories/SparsePage/blob/main/results/README.md) ·
 [**HgRT**](https://github.com/Minerva-Laboratories/HgRT) ·
 [**FoveaKV**](https://github.com/Minerva-Laboratories/FoveaKV) ·
 [**DepthSkip**](https://github.com/Minerva-Laboratories/DepthSkip)
@@ -50,7 +50,7 @@ SparsePage is the decode-selection component of [HgRT](https://github.com/Minerv
 pages: the kernels, the reference, the harness, and the design study that led to dropping the unread pages.
 
 > The project was first called **Riffle**. The raw result files in `results/` predate the rename and are kept as they
-> were written; [`results/README.md`](results/README.md) maps their scheme names to the rows below.
+> were written; [`results/README.md`](https://github.com/Minerva-Laboratories/SparsePage/blob/main/results/README.md) maps their scheme names to the rows below.
 
 ## Highlights
 
@@ -141,7 +141,7 @@ of 8 calls (the 9B's 8 full-attention layers).
 | 128K | 5.57 ms | **1.13 ms** (4.9x) | 1.89 ms (3.0x) | 8.16 ms | 1.15 ms | 1.81 ms | 1.94 / 3.53 / 16.31 |
 | 256K | 11.12 ms | **2.11 ms** (5.3x) | 2.97 ms (3.7x) | 15.90 ms | 2.06 ms | 3.43 ms | 1.92 / 3.52 / 16.31 |
 
-<sub>Source: [`results/bench_h4_d256.json`](results/bench_h4_d256.json) (fields `ms_graph_per_call`, `ms_eager`,
+<sub>Source: [`results/bench_h4_d256.json`](https://github.com/Minerva-Laboratories/SparsePage/blob/main/results/bench_h4_d256.json) (fields `ms_graph_per_call`, `ms_eager`,
 `read_bits`; speedups are against "all pages" in the graph). Bits count K and V of the opened pages and the window in
 bf16, plus every page's summaries, per cached value. Kernel output against the PyTorch reference: relative difference
 1.2e-6 to 1.3e-6 on every row (`out_rel_diff_vs_ref`). The file was written before the rename; it has no scheme
@@ -168,10 +168,10 @@ pages. "Compute vs dense" counts exact tokens plus node evaluations in token equ
 | Quest, 15% of pages | 0.28 | +0.39% | -0.34% | -0.05% |
 | FoveaKV, 5% hot (reads every token at 2 bits; reference) | 1.00 | +0.34% | +0.18% | +0.39% |
 
-<sub>Source: [`results/research/tree_ppl_qwen3.5-9b.jsonl`](results/research/tree_ppl_qwen3.5-9b.jsonl), mean over
+<sub>Source: [`results/research/tree_ppl_qwen3.5-9b.jsonl`](https://github.com/Minerva-Laboratories/SparsePage/blob/main/results/research/tree_ppl_qwen3.5-9b.jsonl), mean over
 documents of `exp(nll - nll_bf16) - 1`. The file was produced in FoveaKV's harness before the rename and uses that
 harness's names (`tree-flat-r10`, `tree-flat-r20`, `tree-pp6-r20`, `drop-flat-r20`, `quest5`, `quest15`, `dyn5`); see
-[`results/README.md`](results/README.md). With 2-3 documents per cell, differences of a few tenths of a percent are
+[`results/README.md`](https://github.com/Minerva-Laboratories/SparsePage/blob/main/results/README.md). With 2-3 documents per cell, differences of a few tenths of a percent are
 within noise.</sub>
 
 Estimating the unopened mass buys nothing over dropping it, so SparsePage drops it. That removes the value summaries
@@ -362,6 +362,6 @@ confidence intervals overlap.
 
 ## License
 
-Apache-2.0, see [`LICENSE`](LICENSE) and [`NOTICE`](NOTICE). The page-selection and paged-attention CUDA kernels are
+Apache-2.0, see [`LICENSE`](https://github.com/Minerva-Laboratories/SparsePage/blob/main/LICENSE) and [`NOTICE`](https://github.com/Minerva-Laboratories/SparsePage/blob/main/NOTICE). The page-selection and paged-attention CUDA kernels are
 adapted from the FoveaKV decode kernels (Minerva Laboratories), and the Qwen3.5 harness from FoveaKV's evaluation
 harness.
